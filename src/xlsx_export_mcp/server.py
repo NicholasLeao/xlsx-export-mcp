@@ -1,18 +1,13 @@
 #!/usr/bin/env python3
 """XLSX Export MCP Server - Python implementation."""
 
-import asyncio
 import json
-import os
 import sys
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import mcp.server.stdio
-import mcp.types as types
-from mcp.server import NotificationOptions, Server
-from pydantic import AnyUrl
+from mcp.server.fastmcp import FastMCP
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 import io
@@ -98,135 +93,76 @@ async def write_xlsx_to_file(xlsx_content: bytes, filename: str) -> str:
         raise
 
 
-# Create MCP server
-server = Server("xlsx-export-mcp")
+# Create FastMCP server
+mcp = FastMCP("xlsx-export-mcp")
 
 
-@server.list_tools()
-async def handle_list_tools() -> List[types.Tool]:
-    """List available tools."""
-    return [
-        types.Tool(
-            name="xlsx_export",
-            description="Export data to Excel (XLSX) format and save to filesystem",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "data": {
-                        "type": "array",
-                        "description": "Array of objects representing spreadsheet rows",
-                        "items": {
-                            "type": "object",
-                        },
-                    },
-                    "filename": {
-                        "type": "string",
-                        "description": "Filename for the exported file (without extension)",
-                        "default": "output",
-                    },
-                    "sheetName": {
-                        "type": "string",
-                        "description": "Name of the worksheet/sheet within the Excel file",
-                        "default": "Sheet1",
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "Optional description of the file contents",
-                    },
-                    "headers": {
-                        "type": "array",
-                        "description": "Optional custom column headers",
-                        "items": {
-                            "type": "string",
-                        },
-                    },
-                },
-                "required": ["data"],
-            },
-        )
-    ]
-
-
-@server.call_tool()
-async def handle_call_tool(
-    name: str, arguments: Dict[str, Any]
-) -> List[types.TextContent]:
-    """Handle tool calls."""
-    if name == "xlsx_export":
-        try:
-            data = arguments.get("data")
-            filename = arguments.get("filename", "output")
-            sheet_name = arguments.get("sheetName", "Sheet1")
-            description = arguments.get("description")
-            headers = arguments.get("headers")
-            
-            # Validate input
-            if not data or not isinstance(data, list):
-                raise ValueError("Data must be provided as an array of objects")
-            
-            if len(data) == 0:
-                raise ValueError("Data array cannot be empty")
-            
-            # Convert to XLSX
-            xlsx_content = convert_to_xlsx(data, sheet_name, headers)
-            
-            # Generate UUID and filename
-            file_uuid = str(uuid.uuid4())
-            sanitized_filename = "".join(c if c.isalnum() or c in "_-" else "_" for c in filename)
-            full_filename = f"{sanitized_filename}_{file_uuid}.xlsx"
-            file_size = get_file_size_string(xlsx_content)
-            row_count = len(data)
-            column_count = len(data[0].keys()) if data else 0
-            
-            # Write XLSX to file system
-            filepath = await write_xlsx_to_file(xlsx_content, full_filename)
-            
-            print(f"✅ XLSX generated: {full_filename} ({file_size})", file=sys.stderr)
-            print(f"   Rows: {row_count}, Columns: {column_count}, Sheet: {sheet_name}", file=sys.stderr)
-            print(f"   Saved to: {filepath}", file=sys.stderr)
-            
-            # Return simplified response with essential information
-            result = {
-                "path": full_filename,
-                "filetype": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "filename": full_filename,
-                "filesize": file_size,
-            }
-            
-            return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
-            
-        except Exception as error:
-            print(f"Error processing XLSX export: {error}", file=sys.stderr)
-            
-            error_result = {
-                "success": False,
-                "error": str(error),
-            }
-            
-            return [types.TextContent(type="text", text=json.dumps(error_result, indent=2))]
+@mcp.tool()
+async def xlsx_export(
+    data: List[Dict[str, Any]],
+    filename: str = "output",
+    sheet_name: str = "Sheet1",
+    description: str = None,
+    headers: List[str] = None
+) -> dict:
+    """Export data to Excel (XLSX) format and save to filesystem.
     
-    raise ValueError(f"Unknown tool: {name}")
-
-
-async def main():
-    """Main server function."""
-    # Run the server using stdin/stdout streams
-    async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-        print("XLSX Export MCP Server running on stdio", file=sys.stderr)
-        await server.run(
-            read_stream,
-            write_stream,
-            NotificationOptions(
-                tools_changed=False,
-                resources_changed=False,
-                prompts_changed=False
-            ),
-        )
+    Args:
+        data: Array of objects representing spreadsheet rows
+        filename: Filename for the exported file (without extension)
+        sheet_name: Name of the worksheet/sheet within the Excel file
+        description: Optional description of the file contents
+        headers: Optional custom column headers
+        
+    Returns:
+        Dictionary with export results including path and file info
+    """
+    try:
+        # Validate input
+        if not data or not isinstance(data, list):
+            raise ValueError("Data must be provided as an array of objects")
+        
+        if len(data) == 0:
+            raise ValueError("Data array cannot be empty")
+        
+        # Convert to XLSX
+        xlsx_content = convert_to_xlsx(data, sheet_name, headers)
+        
+        # Generate UUID and filename
+        file_uuid = str(uuid.uuid4())
+        sanitized_filename = "".join(c if c.isalnum() or c in "_-" else "_" for c in filename)
+        full_filename = f"{sanitized_filename}_{file_uuid}.xlsx"
+        file_size = get_file_size_string(xlsx_content)
+        row_count = len(data)
+        column_count = len(data[0].keys()) if data else 0
+        
+        # Write XLSX to file system
+        filepath = await write_xlsx_to_file(xlsx_content, full_filename)
+        
+        print(f"✅ XLSX generated: {full_filename} ({file_size})", file=sys.stderr)
+        print(f"   Rows: {row_count}, Columns: {column_count}, Sheet: {sheet_name}", file=sys.stderr)
+        print(f"   Saved to: {filepath}", file=sys.stderr)
+        
+        # Return simplified response with essential information
+        return {
+            "path": full_filename,
+            "filetype": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "filename": full_filename,
+            "filesize": file_size,
+        }
+        
+    except Exception as error:
+        print(f"Error processing XLSX export: {error}", file=sys.stderr)
+        
+        return {
+            "success": False,
+            "error": str(error),
+        }
 
 
 def cli_main():
     """CLI entry point."""
-    asyncio.run(main())
+    mcp.run()
 
 
 if __name__ == "__main__":
