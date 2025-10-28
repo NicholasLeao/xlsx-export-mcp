@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
 from openpyxl import Workbook
-from openpyxl.utils.dataframe import dataframe_to_rows
 import io
 
 # Export directory configuration
