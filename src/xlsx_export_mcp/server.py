@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
 from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment
 import io
 
 # Export directory configuration
@@ -44,6 +45,18 @@ def convert_to_xlsx(
         for col_idx, field_name in enumerate(field_names, 1):
             value = row_data.get(field_name, "")
             ws.cell(row=row_idx, column=col_idx, value=value)
+    
+    # Add watermark in first column
+    data_end_row = len(data) + 1  # +1 for header row
+    watermark_row = data_end_row + 2  # Add some space after data
+    watermark_col = 1  # First column
+    
+    # Create watermark cell
+    watermark_cell = ws.cell(row=watermark_row, column=watermark_col, value="This content has been generated using Protex Intelligence. The output is intended to assist but may not always be accurate or complete. Please verify important information before acting upon it.")
+    
+    # Style the watermark
+    watermark_cell.font = Font(name='Arial', size=8, color='666666')
+    watermark_cell.alignment = Alignment(horizontal='left')
     
     # Save to bytes
     output = io.BytesIO()
